@@ -70,6 +70,15 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Meta fetch ────────────────────────────────────────────────────────────
+  if (req.method === 'GET' && path === '/api/meta') {
+    if (!authOk(req)) return json(res, 401, { error: 'Unauthorized' });
+    const targetUrl = url.searchParams.get('url');
+    if (!targetUrl) return json(res, 400, { error: 'url param required' });
+    const meta = await fetchMeta(targetUrl);
+    return json(res, 200, meta);
+  }
+
   // ── REST API ──────────────────────────────────────────────────────────────
   if (path.startsWith('/api/')) {
     if (!authOk(req)) return json(res, 401, { error: 'Unauthorized' });
@@ -105,13 +114,14 @@ const httpServer = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/links') {
       let body;
       try { body = await readBody(req); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
-      const { url: linkUrl, category = 'other', tags = [], status = 'unread', notes = '' } = body;
+      const { url: linkUrl, category = 'other', tags = [], status = 'unread', notes = '', title: manualTitle } = body;
       if (!linkUrl) return json(res, 400, { error: 'url is required' });
 
       const { data: existing } = await supabase.from('links').select('id').eq('url', linkUrl).maybeSingle();
       if (existing) return json(res, 409, { error: 'Already saved', id: existing.id });
 
-      const { title, description } = await fetchMeta(linkUrl);
+      const { title: fetchedTitle, description } = await fetchMeta(linkUrl);
+      const title = manualTitle || fetchedTitle;
       const { data, error } = await supabase.from('links')
         .insert({ url: linkUrl, title, description, category, tags, status, notes: notes || null, last_touched_at: new Date().toISOString() })
         .select().single();
@@ -126,6 +136,7 @@ const httpServer = http.createServer(async (req, res) => {
       try { body = await readBody(req); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
       const id = patchMatch[1];
       const updates = { last_touched_at: new Date().toISOString() };
+      if (body.title !== undefined)    updates.title = body.title || null;
       if (body.status !== undefined)   updates.status = body.status;
       if (body.category !== undefined) updates.category = body.category;
       if (body.tags !== undefined)     updates.tags = body.tags;
