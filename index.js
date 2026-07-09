@@ -8,7 +8,6 @@ import { fetchMeta } from './fetch-meta.js';
 const PORT = process.env.PORT || 3000;
 const API_TOKEN = process.env.API_TOKEN;
 
-const VALID_CATEGORIES = ['article','tool','reference','video','shopping','resource','thread','other'];
 const VALID_STATUSES   = ['unread','skimmed','act-on-it','archived'];
 
 function authOk(req) {
@@ -82,6 +81,16 @@ const httpServer = http.createServer(async (req, res) => {
   // ── REST API ──────────────────────────────────────────────────────────────
   if (path.startsWith('/api/')) {
     if (!authOk(req)) return json(res, 401, { error: 'Unauthorized' });
+
+    // GET /api/categories — default set merged with categories already in use
+    if (req.method === 'GET' && path === '/api/categories') {
+      const { data, error } = await supabase.from('links').select('category');
+      if (error) return json(res, 500, { error: error.message });
+      const defaults = ['article','tool','reference','video','shopping','resource','thread','other'];
+      const used = data.map(r => r.category).filter(Boolean);
+      const all = [...new Set([...defaults, ...used])].sort();
+      return json(res, 200, all);
+    }
 
     // GET /api/links?status=&category=&tag=&limit=&offset=&q=
     if (req.method === 'GET' && path === '/api/links') {

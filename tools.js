@@ -1,15 +1,11 @@
 import { supabase } from './db.js';
 import { fetchMeta } from './fetch-meta.js';
 
-const VALID_CATEGORIES = ['article', 'tool', 'reference', 'video', 'shopping', 'resource', 'thread', 'other'];
 const VALID_STATUSES = ['unread', 'skimmed', 'act-on-it', 'archived'];
 
 // ── save_link ──────────────────────────────────────────────────────────────────
 export async function saveLink({ url, category = 'other', tags = [], notes = '', status = 'unread' }) {
   if (!url) return err('url is required');
-  if (!VALID_CATEGORIES.includes(category)) {
-    return err(`category must be one of: ${VALID_CATEGORIES.join(', ')}`);
-  }
   if (!VALID_STATUSES.includes(status)) {
     return err(`status must be one of: ${VALID_STATUSES.join(', ')}`);
   }
@@ -80,7 +76,6 @@ export async function updateLink({ id, status, category, tags, notes }) {
     updates.status = status;
   }
   if (category !== undefined) {
-    if (!VALID_CATEGORIES.includes(category)) return err(`category must be one of: ${VALID_CATEGORIES.join(', ')}`);
     updates.category = category;
   }
   if (tags !== undefined) updates.tags = tags.filter(Boolean);
