@@ -3,6 +3,19 @@ import { fetchMeta } from './fetch-meta.js';
 
 const VALID_STATUSES = ['unread', 'skimmed', 'act-on-it', 'archived'];
 
+// Resolve a full UUID or a short id prefix (e.g. first 8 chars from list_links)
+// to a full id. `id` is a uuid column, so ilike/prefix matching can't run in the
+// query — resolve it client-side, then filter with .eq on the real uuid.
+async function resolveId(id) {
+  if (id.length === 36) return { id };
+  const { data, error } = await supabase.from('links').select('id');
+  if (error) return { error: error.message };
+  const matches = data.filter(r => r.id.startsWith(id));
+  if (matches.length === 0) return { error: `No link found with id "${id}"` };
+  if (matches.length > 1) return { error: `id prefix "${id}" is ambiguous (${matches.length} matches); use more characters` };
+  return { id: matches[0].id };
+}
+
 // ── save_link ──────────────────────────────────────────────────────────────────
 export async function saveLink({ url, category = 'other', tags = [], notes = '', status = 'unread' }) {
   if (!url) return err('url is required');
@@ -82,9 +95,10 @@ export async function updateLink({ id, status, category, tags, notes }) {
   if (notes !== undefined) updates.notes = notes || null;
 
   // Accept short ID prefix (first 8 chars) or full UUID
-  const idFilter = id.length === 36 ? q => q.eq('id', id) : q => q.ilike('id', `${id}%`);
+  const resolved = await resolveId(id);
+  if (resolved.error) return err(resolved.error);
 
-  const { data, error } = await idFilter(supabase.from('links').update(updates).select()).single();
+  const { data, error } = await supabase.from('links').update(updates).eq('id', resolved.id).select().single();
   if (error) return err(error.message);
 
   return ok(`Updated: "${data.title || data.url}" → status: ${data.status}`);
@@ -115,9 +129,10 @@ export async function searchLinks({ query, limit = 20 }) {
 export async function deleteLink({ id }) {
   if (!id) return err('id is required');
 
-  const idFilter = id.length === 36 ? q => q.eq('id', id) : q => q.ilike('id', `${id}%`);
+  const resolved = await resolveId(id);
+  if (resolved.error) return err(resolved.error);
 
-  const { data, error } = await idFilter(supabase.from('links').delete().select()).single();
+  const { data, error } = await supabase.from('links').delete().eq('id', resolved.id).select().single();
   if (error) return err(error.message);
 
   return ok(`Deleted: "${data.title || data.url}"`);
