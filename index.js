@@ -82,14 +82,47 @@ const httpServer = http.createServer(async (req, res) => {
   if (path.startsWith('/api/')) {
     if (!authOk(req)) return json(res, 401, { error: 'Unauthorized' });
 
-    // GET /api/categories — default set merged with categories already in use
+    // GET /api/categories — defaults + stored taxonomy + categories already in use (for dropdowns)
     if (req.method === 'GET' && path === '/api/categories') {
-      const { data, error } = await supabase.from('links').select('category');
-      if (error) return json(res, 500, { error: error.message });
+      const [linksRes, catsRes] = await Promise.all([
+        supabase.from('links').select('category'),
+        supabase.from('categories').select('name'),
+      ]);
+      if (linksRes.error) return json(res, 500, { error: linksRes.error.message });
       const defaults = ['article','tool','reference','video','shopping','resource','thread','other'];
-      const used = data.map(r => r.category).filter(Boolean);
-      const all = [...new Set([...defaults, ...used])].sort();
+      const used = (linksRes.data || []).map(r => r.category).filter(Boolean);
+      const stored = (catsRes.data || []).map(r => r.name); // empty if table not migrated yet
+      const all = [...new Set([...defaults, ...stored, ...used])].sort();
       return json(res, 200, all);
+    }
+
+    // GET /api/categories/stored — only the persisted taxonomy (drives Home's empty bins)
+    if (req.method === 'GET' && path === '/api/categories/stored') {
+      const { data, error } = await supabase.from('categories').select('name').order('name');
+      if (error) return json(res, 500, { error: error.message });
+      return json(res, 200, (data || []).map(r => r.name));
+    }
+
+    // POST /api/categories — create a category (idempotent)
+    if (req.method === 'POST' && path === '/api/categories') {
+      let body;
+      try { body = await readBody(req); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
+      const name = (body.name || '').trim().toLowerCase();
+      if (!name) return json(res, 400, { error: 'name is required' });
+      if (name === 'other') return json(res, 400, { error: '"other" is the Unassigned bin and cannot be created' });
+      const { data, error } = await supabase.from('categories')
+        .upsert({ name }, { onConflict: 'name' }).select().single();
+      if (error) return json(res, 500, { error: error.message });
+      return json(res, 201, data);
+    }
+
+    // DELETE /api/categories/:name — remove a category from the taxonomy
+    const catDel = path.match(/^\/api\/categories\/(.+)$/);
+    if (req.method === 'DELETE' && catDel) {
+      const name = decodeURIComponent(catDel[1]);
+      const { error } = await supabase.from('categories').delete().eq('name', name);
+      if (error) return json(res, 500, { error: error.message });
+      return json(res, 200, { ok: true });
     }
 
     // GET /api/links?status=&category=&tag=&limit=&offset=&q=
