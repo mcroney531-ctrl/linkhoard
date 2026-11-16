@@ -1,12 +1,13 @@
 {
   "name": "link-hoarder-mcp",
   "version": "1.0.0",
-  "description": "MCP server for Link Hoarder — save-now-triage-later bookmark tool",
+  "description": "MCP server for Link Hoarder \u2014 save-now-triage-later bookmark tool",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node local.js"
+    "dev": "node local.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
