@@ -76,3 +76,47 @@ test('pinterestCanonicalUrl', () => {
   assert.equal(pinterestCanonicalUrl('https://pin.it/abc'), null);
   assert.equal(pinterestCanonicalUrl('not a url'), null);
 });
+
+// ── Timeouts: real node-fetch against local servers that stall ───────────────
+// Metadata must never block capture: a stalled site yields null fields, quickly.
+import http from 'node:http';
+
+async function withServer(handler, fn) {
+  const server = http.createServer(handler);
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  try { return await fn(`http://127.0.0.1:${server.address().port}/`); }
+  finally { server.closeAllConnections(); server.close(); }
+}
+
+async function timed(promise) {
+  const t0 = Date.now();
+  const value = await promise;
+  return { value, ms: Date.now() - t0 };
+}
+
+test('server that never responds: gives up at the timeout with nulls', async () => {
+  await withServer(() => {}, async url => {
+    const { value, ms } = await timed(fetchMeta(url, { timeoutMs: 300 }));
+    assert.deepEqual(value, { title: null, description: null });
+    assert.ok(ms < 2000, `took ${ms}ms`);
+  });
+});
+
+test('server that stalls mid-body: gives up at the timeout with nulls', async () => {
+  const handler = (req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.write('<html><head><meta property="og:title" content="Partial'); // never ends
+  };
+  await withServer(handler, async url => {
+    const { value, ms } = await timed(fetchMeta(url, { timeoutMs: 300 }));
+    assert.deepEqual(value, { title: null, description: null });
+    assert.ok(ms < 2000, `took ${ms}ms`);
+  });
+});
+
+test('normal server still works with real node-fetch', async () => {
+  const handler = (req, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(page('Real page', 'Real description')); };
+  await withServer(handler, async url => {
+    assert.deepEqual(await fetchMeta(url, { timeoutMs: 2000 }), { title: 'Real page', description: 'Real description' });
+  });
+});

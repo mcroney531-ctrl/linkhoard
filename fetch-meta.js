@@ -9,13 +9,17 @@ import fetch from 'node-fetch';
 // When we land on a pin page that isn't the bare /pin/<id>/ URL, we fetch the bare
 // URL for metadata, falling back to the first page's values. Only metadata is
 // affected — the caller stores the URL exactly as shared.
-export async function fetchMeta(url, { fetchImpl = fetch } = {}) {
-  const first = await fetchPage(url, fetchImpl);
+//
+// Never blocks capture: each fetch is capped at timeoutMs (headers + body), and any
+// failure — timeout, block, bad page — just yields null fields. node-fetch v3 ignores
+// a `timeout` option, so the cap is enforced with an AbortSignal.
+export async function fetchMeta(url, { fetchImpl = fetch, timeoutMs = 8000 } = {}) {
+  const first = await fetchPage(url, fetchImpl, timeoutMs);
   if (!first) return { title: null, description: null };
 
   const canonical = pinterestCanonicalUrl(first.finalUrl);
   if (canonical && canonical !== first.finalUrl) {
-    const pin = await fetchPage(canonical, fetchImpl);
+    const pin = await fetchPage(canonical, fetchImpl, timeoutMs);
     if (pin && (pin.meta.title || pin.meta.description)) {
       return {
         title: pin.meta.title || first.meta.title,
@@ -35,7 +39,7 @@ export function pinterestCanonicalUrl(url) {
   return m ? `https://www.pinterest.com/pin/${m[1]}/` : null;
 }
 
-async function fetchPage(url, fetchImpl) {
+async function fetchPage(url, fetchImpl, timeoutMs) {
   try {
     const res = await fetchImpl(url, {
       headers: {
@@ -43,7 +47,7 @@ async function fetchPage(url, fetchImpl) {
         'Accept': 'text/html',
       },
       redirect: 'follow',
-      timeout: 8000,
+      signal: AbortSignal.timeout(timeoutMs), // also aborts a stalled body read
     });
     if (!res.ok) return null;
     const html = await res.text();
