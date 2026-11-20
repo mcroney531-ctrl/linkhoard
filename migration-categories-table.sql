@@ -10,7 +10,6 @@ create table if not exists categories (
 
 alter table categories enable row level security;
 
-create policy "service role full access categories"
-  on categories for all
-  using (true)
-  with check (true);
+-- No policies on purpose: service role bypasses RLS. See
+-- migration-lockdown-anon-access.sql.
+revoke all on categories from anon, authenticated;

@@ -39,8 +39,9 @@ create index if not exists links_fts_idx on links using gin (
 -- Enable Row Level Security (disable for service-role-key server access — keep for future user auth)
 alter table links enable row level security;
 
--- Allow unrestricted access via service role (MCP server uses service role key)
-create policy "service role full access"
-  on links for all
-  using (true)
-  with check (true);
+-- No policies on purpose. The server uses the service role key, which bypasses
+-- RLS, so RLS with zero policies denies anon/authenticated and nothing else.
+-- A policy "for all using (true)" with no "to" clause applies to role public,
+-- i.e. it would open the table to anyone holding the publishable key.
+-- See migration-lockdown-anon-access.sql.
+revoke all on links from anon, authenticated;
